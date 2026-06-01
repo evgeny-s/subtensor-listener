@@ -76,7 +76,7 @@ export class ListenerDefinition {
    * `{{blockHash}}`. The rendered URL is exposed as `{{explorerUrl}}` and added
    * to the default message. Use a RAW URL (no markdown) — Slack auto-links it so
    * it opens in the browser on click. Example:
-   *   "https://polkadot.js.org/apps/?rpc=wss://…#/explorer/query/{{blockHash}}"
+   *   "https://polkadot.js.org/apps/?rpc=wss://…#/explorer/query/{{blockNumber}}"
    */
   @IsOptional()
   @IsString()

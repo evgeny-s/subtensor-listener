@@ -24,7 +24,6 @@ export const DEFAULT_TEMPLATE = [
   '🚨 {{event}} on {{network}}',
   '• Runtime: {{specVersionChange}}',
   '• Block: #{{blockNumber}}',
-  '• Hash: {{blockHashShort}}',
   '• Time: {{timestampUtc}}',
   '• Explorer: {{explorerUrl}}',
 ].join('\n');

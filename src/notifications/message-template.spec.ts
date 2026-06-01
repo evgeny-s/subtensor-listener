@@ -25,15 +25,16 @@ describe('renderMessage', () => {
       event: 'CodeUpdated',
       network: 'Finney Mainnet',
       blockNumber: '8283784',
-      blockHashShort: '0x9173a952…e0e3a844',
       specVersionChange: '402 → 411',
       timestampUtc: '28 May 2026 15:54 UTC',
+      explorerUrl: 'https://polkadot.js.org/apps/#/explorer/query/0xabc',
     });
     expect(out).toContain('🚨 CodeUpdated on Finney Mainnet');
-    expect(out).toContain('Finney Mainnet');
     expect(out).toContain('#8283784');
     expect(out).toContain('402 → 411');
-    expect(out).toContain('0x9173a952…e0e3a844');
+    expect(out).toContain('https://polkadot.js.org/apps/');
+    // Hash line was removed — the explorer link covers it.
+    expect(out).not.toContain('Hash');
     // No literal mrkdwn that a Slack workflow variable wouldn't render.
     expect(out).not.toContain('*');
     expect(out).not.toContain('`');
