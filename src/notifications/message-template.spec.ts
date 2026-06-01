@@ -24,15 +24,18 @@ describe('renderMessage', () => {
     const out = renderMessage(DEFAULT_TEMPLATE, {
       event: 'CodeUpdated',
       network: 'Finney Mainnet',
-      pallet: 'system',
-      blockNumber: '1234567',
-      blockHash: '0xabc',
-      specVersionChange: '180 → 181',
-      timestamp: '2026-06-01T12:00:00.000Z',
+      blockNumber: '8283784',
+      blockHashShort: '0x9173a952…e0e3a844',
+      specVersionChange: '402 → 411',
+      timestampUtc: '28 May 2026 15:54 UTC',
     });
-    expect(out).toContain('CodeUpdated');
+    expect(out).toContain('🚨 CodeUpdated on Finney Mainnet');
     expect(out).toContain('Finney Mainnet');
-    expect(out).toContain('1234567');
-    expect(out).toContain('180 → 181');
+    expect(out).toContain('#8283784');
+    expect(out).toContain('402 → 411');
+    expect(out).toContain('0x9173a952…e0e3a844');
+    // No literal mrkdwn that a Slack workflow variable wouldn't render.
+    expect(out).not.toContain('*');
+    expect(out).not.toContain('`');
   });
 });

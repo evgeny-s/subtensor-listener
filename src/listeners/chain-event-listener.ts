@@ -232,10 +232,12 @@ export class ChainEventListener {
       event: match.event,
       blockNumber: String(match.blockNumber),
       blockHash: match.blockHash,
+      blockHashShort: shortHash(match.blockHash),
       specVersionFrom: match.specVersionFrom?.toString() ?? '',
       specVersionTo: match.specVersionTo?.toString() ?? '',
       specVersionChange: specVersionChange(match),
       timestamp: formatTimestamp(match.timestampMs),
+      timestampUtc: formatTimestampUtc(match.timestampMs),
     };
   }
 
@@ -279,4 +281,35 @@ export function specVersionChange(match: MatchedEvent): string {
 function formatTimestamp(ms: number | null): string {
   if (ms === null) return 'unknown';
   return new Date(ms).toISOString();
+}
+
+const MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/** Human-readable UTC time, e.g. "28 May 2026 15:54 UTC". */
+function formatTimestampUtc(ms: number | null): string {
+  if (ms === null) return 'unknown';
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()} ` +
+    `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`
+  );
+}
+
+/** Abbreviates a long 0x hash to `0x1234abcd…wxyz5678` for compact display. */
+function shortHash(hash: string): string {
+  return hash.length > 20 ? `${hash.slice(0, 10)}…${hash.slice(-8)}` : hash;
 }

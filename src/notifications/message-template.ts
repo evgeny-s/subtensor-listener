@@ -9,16 +9,23 @@
 export type TemplateVars = Record<string, string>;
 
 /**
- * Default template for a chain-event notification. Tokens left unfilled render
- * as empty strings, so this is safe to reuse for events without a spec-version
- * change.
+ * Default template for a chain-event notification.
+ *
+ * Uses a unicode emoji and plain text (no `*bold*`/backticks) on purpose: when
+ * delivered through a Slack *workflow* webhook, the message text arrives inside
+ * a workflow variable, which Slack renders as PLAIN TEXT — it does not parse
+ * mrkdwn. Unicode emoji and bullets render fine; `*`/backticks would show
+ * literally. (Override via `messageTemplate` if your transport renders mrkdwn.)
+ *
+ * Tokens left unfilled render as empty strings, so this is safe to reuse for
+ * events without a spec-version change.
  */
 export const DEFAULT_TEMPLATE = [
-  ':rotating_light: *{{event}}* detected on *{{network}}*',
-  '• Block: {{blockNumber}} (`{{blockHash}}`)',
-  '• Pallet: {{pallet}}',
+  '🚨 {{event}} on {{network}}',
   '• Runtime: {{specVersionChange}}',
-  '• Time: {{timestamp}}',
+  '• Block: #{{blockNumber}}',
+  '• Hash: {{blockHashShort}}',
+  '• Time: {{timestampUtc}}',
 ].join('\n');
 
 const TOKEN = /\{\{\s*([\w.]+)\s*\}\}/g;
