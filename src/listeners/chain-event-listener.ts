@@ -45,6 +45,7 @@ const SCAN_CONCURRENCY = 5;
  */
 export class ChainEventListener {
   private readonly logger: Logger;
+  private readonly eventLabel: string;
   private readonly dedup = new DedupCache();
   private api!: ApiPromise;
   private unsubscribe?: () => void;
@@ -63,6 +64,9 @@ export class ChainEventListener {
     private readonly backfillBlocks: number,
   ) {
     this.logger = new Logger(`Listener:${def.network}`);
+    this.eventLabel = def.events
+      .map((e) => `${e.pallet}.${e.event}`)
+      .join(', ');
   }
 
   async start(): Promise<void> {
@@ -78,7 +82,13 @@ export class ChainEventListener {
     this.bump(finalized);
 
     this.unsubscribe = await this.api.rpc.chain.subscribeFinalizedHeads(
-      (header) => this.bump(header.number.toNumber()),
+      (header) => {
+        const n = header.number.toNumber();
+        // Heartbeat: one line per finalized block so the logs show the
+        // service is alive and keeping up, even when nothing matches.
+        this.logger.log(`Finalized #${n} — watching ${this.eventLabel}`);
+        this.bump(n);
+      },
     );
 
     // On reconnect, jump the target to the current finalized head; the drain
