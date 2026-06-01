@@ -70,4 +70,15 @@ export class ListenerDefinition {
   @IsOptional()
   @IsString()
   messageTemplate?: string;
+
+  /**
+   * Optional block-explorer URL template, interpolated with `{{blockNumber}}` /
+   * `{{blockHash}}`. The rendered URL is exposed as `{{explorerUrl}}` and added
+   * to the default message. Use a RAW URL (no markdown) — Slack auto-links it so
+   * it opens in the browser on click. Example:
+   *   "https://polkadot.js.org/apps/?rpc=wss://…#/explorer/query/{{blockHash}}"
+   */
+  @IsOptional()
+  @IsString()
+  explorerUrl?: string;
 }

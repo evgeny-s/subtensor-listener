@@ -226,7 +226,7 @@ export class ChainEventListener {
   }
 
   private buildVars(match: MatchedEvent): TemplateVars {
-    return {
+    const vars: TemplateVars = {
       network: this.def.network,
       pallet: match.pallet,
       event: match.event,
@@ -239,6 +239,12 @@ export class ChainEventListener {
       timestamp: formatTimestamp(match.timestampMs),
       timestampUtc: formatTimestampUtc(match.timestampMs),
     };
+    // Interpolate the explorer URL template (if configured) against the vars
+    // above, so {{explorerUrl}} resolves to a clickable, raw block link.
+    vars.explorerUrl = this.def.explorerUrl
+      ? renderMessage(this.def.explorerUrl, vars)
+      : '';
+    return vars;
   }
 
   private async resolveBlockNumber(

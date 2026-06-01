@@ -26,6 +26,7 @@ export const DEFAULT_TEMPLATE = [
   '• Block: #{{blockNumber}}',
   '• Hash: {{blockHashShort}}',
   '• Time: {{timestampUtc}}',
+  '• Explorer: {{explorerUrl}}',
 ].join('\n');
 
 const TOKEN = /\{\{\s*([\w.]+)\s*\}\}/g;
