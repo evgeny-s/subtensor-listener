@@ -72,7 +72,16 @@ jobs:
     runs-on: ubuntu-latest
     needs: build_image
     if: github.ref_name == 'main' && github.actor != 'dependabot[bot]'
+    env:
+      VERSIONS_PAT: ${{ secrets.VERSIONS_PAT }}
     steps:
+      - name: Check required secrets
+        run: |
+          if [ -z "$VERSIONS_PAT" ]; then
+            echo "::error::Missing VERSIONS_PAT secret. Add it to subtensor-listener so CI can update tao-com-official/versions."
+            exit 1
+          fi
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -89,13 +98,21 @@ jobs:
           echo "promote_tag=prod-${{ needs.build_image.outputs.image_tag }}" >> "$GITHUB_OUTPUT"
           echo "Pushed prod-${{ needs.build_image.outputs.image_tag }}"
 
-      - name: Update image tag in versions repo
+      - name: Install yq
         run: |
-          git clone https://x-access-token:${{ secrets.VERSIONS_PAT }}@github.com/tao-com-official/versions.git versions-repo
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: Update image tag in versions repo
+        env:
+          PROD_IMAGE_TAG: ${{ steps.promote.outputs.promote_tag }}
+        run: |
+          git clone "https://x-access-token:${VERSIONS_PAT}@github.com/tao-com-official/versions.git" versions-repo
           cd versions-repo
           git config user.email "ci@tao.com"
           git config user.name "GitHub Actions"
-          yq e '.image.tag = "${{ steps.promote.outputs.promote_tag }}"' -i prod/subtensor-listener/values.yaml
+          yq e '.image.tag = strenv(PROD_IMAGE_TAG)' -i prod/subtensor-listener/values.yaml
           git add prod/subtensor-listener/values.yaml
-          git commit -m "chore: update prod-subtensor-listener image to ${{ steps.promote.outputs.promote_tag }}"
+          git commit -m "chore: update prod-subtensor-listener image to ${PROD_IMAGE_TAG}"
           git push
