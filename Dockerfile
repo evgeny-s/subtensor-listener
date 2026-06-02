@@ -4,28 +4,33 @@
 # runs as non-root and exposes :3020 for the health probes.
 #   docker build -t subtensor-listener .
 
-ARG NODE_VERSION=22-alpine
+# ── Stage 1: Install deps + compile TypeScript ───────────────────
+FROM node:22-slim@sha256:f3a68cf41a855d227d1b0ab832bed9749469ef38cf4f58182fb8c893bc462383 AS builder
 
-# ---- deps: full install (incl. dev) so the builder can run `nest build` ----
-FROM node:${NODE_VERSION} AS deps
 WORKDIR /app
+
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# ---- builder: compile TS -> dist ----
-FROM deps AS builder
-WORKDIR /app
 COPY tsconfig*.json nest-cli.json ./
-COPY src ./src
+COPY src/ src/
+
 RUN npm run build
 
-# ---- runner: prod-only deps + compiled output ----
-FROM node:${NODE_VERSION} AS runner
+# ── Stage 2: Slim runtime ────────────────────────────────────────
+FROM node:22-slim@sha256:f3a68cf41a855d227d1b0ab832bed9749469ef38cf4f58182fb8c893bc462383
+
 WORKDIR /app
-ENV NODE_ENV=production
+
+# Prod-only deps — the dev toolchain (nest cli, ts, jest) stays in the builder.
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
-COPY --from=builder /app/dist ./dist
-EXPOSE 3020
+
+COPY --from=builder --chown=node:node /app/dist/ dist/
+
 USER node
+
+ENV NODE_ENV=production
+EXPOSE 3020
+
 CMD ["node", "dist/main.js"]
