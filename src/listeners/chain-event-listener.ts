@@ -39,9 +39,10 @@ const SCAN_CONCURRENCY = 5;
 
 /**
  * Drives one listener definition: backfills a recent window on start, then
- * follows finalized heads. Backfill, live, and post-reconnect gap-fill all go
- * through the same drain loop, capped at the backfill window so a long outage
- * never triggers an unbounded catch-up.
+ * follows new (best) heads so alerts fire as soon as an event lands in a
+ * block, without waiting for finalization. Backfill, live, and post-reconnect
+ * gap-fill all go through the same drain loop, capped at the backfill window
+ * so a long outage never triggers an unbounded catch-up.
  */
 export class ChainEventListener {
   private readonly logger: Logger;
@@ -73,31 +74,32 @@ export class ChainEventListener {
     this.api = await this.connection.getConnection(this.def.endpoints);
     await this.api.isReady;
 
-    const finalized = await this.scanner.finalizedNumber(this.api);
+    const best = await this.scanner.bestNumber(this.api);
     // Seed lastProcessed so the first drain covers exactly the backfill window.
-    this.lastProcessed = Math.max(-1, finalized - this.backfillBlocks);
+    this.lastProcessed = Math.max(-1, best - this.backfillBlocks);
     this.logger.log(
-      `Backfilling blocks ${this.lastProcessed + 1}..${finalized}, then following finalized heads.`,
+      `Backfilling blocks ${this.lastProcessed + 1}..${best}, then following new heads.`,
     );
-    this.bump(finalized);
+    this.bump(best);
 
-    this.unsubscribe = await this.api.rpc.chain.subscribeFinalizedHeads(
-      (header) => {
-        const n = header.number.toNumber();
-        // Heartbeat: one line per finalized block so the logs show the
-        // service is alive and keeping up, even when nothing matches.
-        this.logger.log(`Finalized #${n} — watching ${this.eventLabel}`);
-        this.bump(n);
-      },
-    );
+    // Best (non-finalized) heads: alert as soon as the event is in a block.
+    // A reorg re-including the event in a nearby block is absorbed by the
+    // dedup window (same event + arguments within DEDUP_WINDOW_BLOCKS).
+    this.unsubscribe = await this.api.rpc.chain.subscribeNewHeads((header) => {
+      const n = header.number.toNumber();
+      // Heartbeat: one line per block so the logs show the service is
+      // alive and keeping up, even when nothing matches.
+      this.logger.log(`Block #${n} — watching ${this.eventLabel}`);
+      this.bump(n);
+    });
 
-    // On reconnect, jump the target to the current finalized head; the drain
+    // On reconnect, jump the target to the current best head; the drain
     // loop fills the gap (capped at the backfill window).
     this.detachReconnect = this.connection.onReconnect(
       this.def.endpoints,
       () => {
         void this.scanner
-          .finalizedNumber(this.api)
+          .bestNumber(this.api)
           .then((head) => this.bump(head))
           .catch((err) =>
             this.logger.error(`Gap-fill failed: ${(err as Error).message}`),
@@ -194,7 +196,7 @@ export class ChainEventListener {
       );
       for (const match of matches) {
         const key = dedupKey(this.def.network, match);
-        if (!this.dedup.addIfNew(key)) continue;
+        if (!this.dedup.shouldAlert(key, blockNumber)) continue;
         this.logger.log(
           `Matched ${match.pallet}.${match.event} in block ${blockNumber}.`,
         );
@@ -279,9 +281,14 @@ export class ChainEventListener {
   }
 }
 
-/** Dedup key: a given event at a given position in a given block, per listener. */
+/**
+ * Dedup key: the event type plus its arguments, per listener. Deliberately
+ * excludes the block number and event index — the {@link DedupCache} window
+ * handles proximity, so a reorg that moves the event to a nearby block doesn't
+ * re-alert, while the same event with different arguments alerts separately.
+ */
 export function dedupKey(network: string, match: MatchedEvent): string {
-  return `${network}|${match.blockNumber}|${match.pallet}.${match.event}|${match.eventIndex}`;
+  return `${network}|${match.pallet}.${match.event}|${match.data}`;
 }
 
 /** Human-readable spec-version transition for the message. */
