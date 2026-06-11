@@ -28,7 +28,7 @@ export class AppConfig {
     return this.numberFromEnv('BLOCK_TIME_SECONDS', 12);
   }
 
-  /** Derived: maximum number of finalized blocks to backfill. */
+  /** Derived: maximum number of blocks to backfill. */
   get backfillBlocks(): number {
     return Math.max(
       1,

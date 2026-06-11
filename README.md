@@ -12,7 +12,8 @@ so new watches need no code changes.
 - Connects to one or more RPC endpoints per listener (`@polkadot/api`), shared
   per endpoint set, with auto-reconnect across the failover list.
 - Backfills a recent window (default 10 min) on startup, then follows
-  **finalized** heads (no reorg false-positives).
+  **new (best)** heads, so an alert fires as soon as the event lands in a
+  block — without waiting for finalization.
 - On a match, enriches with `specVersion` (old→new), block hash and timestamp,
   renders a message from a template, and POSTs it to the listener's webhook.
 - In-memory dedup avoids re-alerting within a process lifetime (the service is

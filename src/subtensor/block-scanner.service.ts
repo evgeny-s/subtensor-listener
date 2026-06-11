@@ -3,17 +3,20 @@ import type { ApiPromise } from '@polkadot/api';
 import type { EventFilter } from '../config/listener.definition';
 
 /** The slice of a block-scoped api decoration we actually use. */
+interface EventRecord {
+  event: {
+    section: string;
+    method: string;
+    data: { toString: () => string };
+  };
+}
+
 interface BlockApi {
   query: {
     system: {
       events: () => Promise<
-        ArrayLike<{ event: { section: string; method: string } }> & {
-          forEach: (
-            cb: (
-              record: { event: { section: string; method: string } },
-              index: number,
-            ) => void,
-          ) => void;
+        ArrayLike<EventRecord> & {
+          forEach: (cb: (record: EventRecord, index: number) => void) => void;
         }
       >;
     };
@@ -25,11 +28,13 @@ interface BlockApi {
 export interface MatchedEvent {
   pallet: string;
   event: string;
+  /** JSON-encoded event arguments (distinguishes events for dedup). */
+  data: string;
   blockNumber: number;
   blockHash: string;
   /** Block timestamp in ms (from the timestamp pallet), or null if unavailable. */
   timestampMs: number | null;
-  /** Position of the event within the block's event list (used for dedup). */
+  /** Position of the event within the block's event list. */
   eventIndex: number;
   /** Runtime spec version at the parent block, or null if it couldn't be read. */
   specVersionFrom: number | null;
@@ -41,10 +46,9 @@ export interface MatchedEvent {
 export class BlockScanner {
   private readonly logger = new Logger(BlockScanner.name);
 
-  /** Latest finalized block number. */
-  async finalizedNumber(api: ApiPromise): Promise<number> {
-    const hash = await api.rpc.chain.getFinalizedHead();
-    const header = await api.rpc.chain.getHeader(hash);
+  /** Latest best (non-finalized) block number. */
+  async bestNumber(api: ApiPromise): Promise<number> {
+    const header = await api.rpc.chain.getHeader();
     return header.number.toNumber();
   }
 
@@ -70,6 +74,7 @@ export class BlockScanner {
       matches.push({
         pallet: section,
         event: method,
+        data: record.event.data.toString(),
         blockNumber,
         blockHash,
         timestampMs: null,
