@@ -43,8 +43,10 @@ export class DedupCache {
     this.lastAlerted.delete(key);
     this.lastAlerted.set(key, blockNumber);
     if (this.lastAlerted.size > this.maxSize) {
-      const oldest = this.lastAlerted.keys().next().value;
-      if (oldest !== undefined) this.lastAlerted.delete(oldest);
+      for (const oldest of this.lastAlerted.keys()) {
+        this.lastAlerted.delete(oldest);
+        break;
+      }
     }
     return true;
   }
