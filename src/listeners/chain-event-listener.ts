@@ -37,6 +37,9 @@ export interface ReplayResult {
 /** How many blocks to scan concurrently while backfilling a range. */
 const SCAN_CONCURRENCY = 5;
 
+/** Backoff before retrying a reattach that failed transiently. */
+const REATTACH_RETRY_MS = 2500;
+
 /**
  * Drives one listener definition: backfills a recent window on start, then
  * follows new (best) heads so alerts fire as soon as an event lands in a
@@ -56,6 +59,12 @@ export class ChainEventListener {
   private targetHead = -1;
   private draining = false;
   private stopped = false;
+
+  /** Serializes reattach() so racing reconnect signals can't leak head subs. */
+  private reattaching = false;
+  private reattachQueued = false;
+  /** Pending reattach retry after a transient failure (cleared on stop). */
+  private reattachRetry?: ReturnType<typeof setTimeout>;
 
   constructor(
     private readonly def: ListenerDefinition,
@@ -82,34 +91,117 @@ export class ChainEventListener {
     );
     this.bump(best);
 
-    // Best (non-finalized) heads: alert as soon as the event is in a block.
-    // A reorg re-including the event in a nearby block is absorbed by the
-    // dedup window (same event + arguments within DEDUP_WINDOW_BLOCKS).
-    this.unsubscribe = await this.api.rpc.chain.subscribeNewHeads((header) => {
+    await this.subscribeHeads();
+
+    // On reconnect *or* connection recreation (after a runtime upgrade), the
+    // pooled api may be a brand-new instance — re-acquire it, re-subscribe, and
+    // gap-fill. Re-processing the boundary block on the fresh (clean-metadata)
+    // connection is what makes the alert survive an upgrade; dedup prevents a
+    // double-alert if the live pass already delivered it.
+    this.detachReconnect = this.connection.onReconnect(
+      this.def.endpoints,
+      () => void this.reattach(),
+    );
+  }
+
+  /**
+   * (Re-)subscribes to new (best) heads on the current {@link api}, replacing
+   * any prior subscription. A reorg re-including the event in a nearby block is
+   * absorbed by the dedup window (same event + arguments within
+   * DEDUP_WINDOW_BLOCKS).
+   */
+  private async subscribeHeads(): Promise<void> {
+    const next = await this.api.rpc.chain.subscribeNewHeads((header) => {
       const n = header.number.toNumber();
       // Heartbeat: one line per block so the logs show the service is
       // alive and keeping up, even when nothing matches.
       this.logger.log(`Block #${n} — watching ${this.eventLabel}`);
       this.bump(n);
     });
+    // Tear down the old subscription only once the new one is live, so a
+    // failed subscribe can't leave us with no head feed.
+    const prev = this.unsubscribe;
+    this.unsubscribe = next;
+    prev?.();
+  }
 
-    // On reconnect, jump the target to the current best head; the drain
-    // loop fills the gap (capped at the backfill window).
-    this.detachReconnect = this.connection.onReconnect(
-      this.def.endpoints,
-      () => {
-        void this.scanner
-          .bestNumber(this.api)
-          .then((head) => this.bump(head))
-          .catch((err) =>
-            this.logger.error(`Gap-fill failed: ${(err as Error).message}`),
+  /**
+   * Re-binds to the (possibly recreated) pooled connection. Serialized so
+   * overlapping reconnect signals can't leak head subscriptions; a signal that
+   * arrives mid-flight is coalesced into one trailing run.
+   */
+  private async reattach(): Promise<void> {
+    if (this.reattaching) {
+      this.reattachQueued = true;
+      return;
+    }
+    this.reattaching = true;
+    try {
+      do {
+        this.reattachQueued = false;
+        try {
+          await this.reattachOnce();
+        } catch (err) {
+          if (this.stopped) return;
+          this.logger.error(
+            `Re-attach failed: ${(err as Error).message}; retrying shortly.`,
           );
-      },
+          this.scheduleReattachRetry();
+        }
+      } while (this.reattachQueued && !this.stopped);
+    } finally {
+      this.reattaching = false;
+    }
+  }
+
+  /**
+   * One reattach pass. If the pooled api is unchanged (a plain socket
+   * reconnect) the head subscription still flows, so we only gap-fill. If it's
+   * a fresh instance (post-upgrade recreation) we rebind: re-subscribe heads
+   * and **rewind** so the upgrade-boundary block — which may have failed to
+   * decode on the old downgraded connection — is re-scanned on the clean one.
+   * Dedup suppresses any alert already delivered for the re-scanned blocks.
+   */
+  private async reattachOnce(): Promise<void> {
+    if (this.stopped) return;
+    const api = await this.connection.getConnection(this.def.endpoints);
+    if (this.stopped) return;
+
+    if (api === this.api) {
+      const head = await this.scanner.bestNumber(api);
+      if (this.stopped) return;
+      this.bump(head);
+      return;
+    }
+
+    this.api = api;
+    const [, head] = await Promise.all([
+      this.subscribeHeads(),
+      this.scanner.bestNumber(api),
+    ]);
+    if (this.stopped) {
+      this.unsubscribe?.();
+      return;
+    }
+    // Rewind to re-cover the recent window (incl. the upgrade boundary).
+    this.lastProcessed = Math.min(
+      this.lastProcessed,
+      Math.max(-1, head - this.backfillBlocks),
     );
+    this.bump(head);
+  }
+
+  private scheduleReattachRetry(): void {
+    if (this.reattachRetry || this.stopped) return;
+    this.reattachRetry = setTimeout(() => {
+      this.reattachRetry = undefined;
+      if (!this.stopped) void this.reattach();
+    }, REATTACH_RETRY_MS);
   }
 
   stop(): void {
     this.stopped = true;
+    if (this.reattachRetry) clearTimeout(this.reattachRetry);
     this.unsubscribe?.();
     this.detachReconnect?.();
   }
