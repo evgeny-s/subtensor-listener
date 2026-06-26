@@ -37,7 +37,7 @@ array.
   connections, shared per endpoint set, auto-reconnect) and `BlockScanner`
   (matches events in a block, enriches with `specVersion` old→new + timestamp).
 - `src/listeners` — `ChainEventListener` (per definition: backfill the recent
-  window, then follow **finalized** heads; in-memory dedup; reconnect gap-fill)
+  window, then follow **new (best)** heads; in-memory dedup; reconnect gap-fill)
   and `ListenersManager` (lifecycle + test replay routing).
 - `src/notifications` — generic `{{token}}` template rendering + `WebhookNotifier`
   (best-effort POST, one retry on 429).
@@ -48,9 +48,13 @@ array.
 
 ## Key design decisions
 
-- **Finalized heads only** — no false runtime-upgrade alerts from reorgs.
-- **Stateless dedup** — in-memory only; a restart may re-alert an event still
-  inside the backfill window. Accepted (no DB / no persistent disk).
+- **New (best) heads** — alerts fire as soon as the event lands in a block,
+  without waiting ~2 blocks for finalization.
+- **Stateless dedup** — in-memory only, keyed by event type + arguments with a
+  5-block window (hardcoded, not env-tunable), so a reorg re-including the
+  same event in a nearby block doesn't re-alert. A restart may re-alert an
+  event still inside the backfill window. Accepted (no DB / no persistent
+  disk).
 - **Backfill window** capped (default 10 min); reconnect gap-fill is capped to
   the same window so a long outage never triggers an unbounded catch-up.
 - **Generic webhook transport** — decoupled from Slack; the message is rendered

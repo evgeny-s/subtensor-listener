@@ -4,6 +4,7 @@ import { dedupKey, specVersionChange } from './chain-event-listener';
 const base: MatchedEvent = {
   pallet: 'system',
   event: 'CodeUpdated',
+  data: '[]',
   blockNumber: 100,
   blockHash: '0xabc',
   timestampMs: 0,
@@ -13,12 +14,18 @@ const base: MatchedEvent = {
 };
 
 describe('dedupKey', () => {
-  it('is unique per network/block/event/position', () => {
-    expect(dedupKey('Finney', base)).toBe('Finney|100|system.CodeUpdated|3');
+  it('is unique per network/event/arguments', () => {
+    expect(dedupKey('Finney', base)).toBe('Finney|system.CodeUpdated|[]');
   });
 
-  it('differs by event position within the same block', () => {
-    expect(dedupKey('Finney', { ...base, eventIndex: 4 })).not.toBe(
+  it('ignores block number and position (a reorg must not re-alert)', () => {
+    expect(
+      dedupKey('Finney', { ...base, blockNumber: 101, eventIndex: 7 }),
+    ).toBe(dedupKey('Finney', base));
+  });
+
+  it('differs when the event arguments differ', () => {
+    expect(dedupKey('Finney', { ...base, data: '["0xdead"]' })).not.toBe(
       dedupKey('Finney', base),
     );
   });

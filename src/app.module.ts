@@ -9,7 +9,7 @@ import { TestModule } from './test-endpoint/test.module';
 
 /**
  * Root module. The service is stateless (no DB, no auth): everything is driven
- * by env. Listeners follow finalized chain heads and push notifications via a
+ * by env. Listeners follow new (best) chain heads and push notifications via a
  * generic webhook; health probes expose RPC connectivity; a secret-guarded test
  * endpoint replays specific blocks through the live pipeline.
  */
